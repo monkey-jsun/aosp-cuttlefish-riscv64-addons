@@ -1,0 +1,13 @@
+# Pinned third-party APKs.  Columns, tab-separated:
+#   fetch  dest(relative to this repo)  bytes  sha256  primary_url  fallback_url
+#
+# Both artifacts are FETCHED, never committed. This repo therefore contains no
+# third-party binaries at all: we distribute a URL and a checksum, not the bytes,
+# which keeps redistribution obligations (F-Droid is GPL-3.0; the WebView is a
+# Chromium build with BSD and LGPL parts) off this repo entirely.
+#
+# If an upstream proves unreliable, mirror it to a GitHub Release asset (2 GB/asset
+# limit) and put that in primary_url, leaving upstream as the fallback. That is a
+# one-column edit -- no restructuring.
+yes	apps/webview/SystemWebView64.apk	145131247	efe16baae89985c4fd52e64a74ecc36506aa22e6b6e9d34222978f7bb81bdc92	https://media.githubusercontent.com/media/BayLibre/android_device_spacemit_common/android-17/webview/SystemWebView64.apk	-
+yes	apps/fdroid/FDroid.apk	12426276	985f5181d48bb6bafd54083a048b391271e0ab28385881cc41294fb01a222762	https://f-droid.org/repo/org.fdroid.fdroid_1023052.apk	-

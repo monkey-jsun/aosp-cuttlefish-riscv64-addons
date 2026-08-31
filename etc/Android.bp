@@ -1,0 +1,13 @@
+// Copyright (C) 2026 The Android Open Source Project
+// SPDX-License-Identifier: Apache-2.0
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+prebuilt_etc {
+    name: "init.js.rc",
+    src: "init.js.rc",
+    sub_dir: "init",
+    product_specific: true,
+}

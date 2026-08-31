@@ -1,0 +1,5 @@
+# Third-party APKs are fetched by tools/fetch-apks.sh, never committed.
+# See prebuilts/apk-pins.tsv for sources and checksums.
+apps/webview/SystemWebView64.apk
+apps/fdroid/FDroid.apk
+*.part

@@ -1,0 +1,39 @@
+// Copyright (C) 2026 The Android Open Source Project
+// SPDX-License-Identifier: Apache-2.0
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+// riscv64 WebView provider. AOSP's external/chromium-webview/Android.bp declares
+// arm/arm64/x86/x86_64 only, so Soong's disablePrebuiltsWithoutApkMutator silently
+// disables the stock `webview` module on riscv64 and no APK is installed -- hence
+// "Current WebView package is null". Everything else is already present in the image
+// (libwebviewchromium_loader, libwebviewchromium_plat_support,
+// android.software.webview.xml, and the com.android.webview entry in
+// preinstalled-packages-media-product.xml), and com.android.webview is already
+// availableByDefault in config_webview_packages.xml -- so only the APK is missing.
+//
+// No package-name collision: the stock module is disabled on this arch.
+// Shape follows BayLibre's verified module for the same APK on android-17.
+//
+// The APK is NOT in git (145 MB, over GitHub's 100 MB file limit).
+// Run tools/fetch-apks.sh to place it. See prebuilts/apk-pins.tsv.
+android_app_import {
+    name: "webview_riscv64",
+    apk: "SystemWebView64.apk",
+    product_specific: true,
+
+    // NOT presigned: build/soong/scripts/check_prebuilt_presigned_apk.py rejects
+    // presigned for targetSdk >= 30 and demands preprocessed:true instead.
+    default_dev_cert: true,
+
+    // The APK's optional uses-libs are not visible to a module outside the
+    // platform build; usesLibrary.enforce is on by default.
+    enforce_uses_libs: false,
+
+    required: [
+        "libwebviewchromium_loader",
+        "libwebviewchromium_plat_support",
+    ],
+}

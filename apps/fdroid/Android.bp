@@ -1,0 +1,34 @@
+// Copyright (C) 2026 The Android Open Source Project
+// SPDX-License-Identifier: Apache-2.0
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+// F-Droid, imported from upstream's unmodified APK.
+//
+// The APK is NOT in git. Run tools/fetch-apks.sh to place it; see prebuilts/apk-pins.tsv.
+//
+// strip_unused_jni_arch is MANDATORY, not an optimisation. Upstream ships
+// lib/{arm64-v8a,armeabi-v7a,x86,x86_64}/libandroidx.graphics.path.so and no
+// riscv64 slice. Verified on k3-jun 2026-08-30: a preinstalled system app with no
+// matching ABI is rejected at boot scan with
+//   "Failed to scan /product/app/FDroid: Error unpackaging native libs, errorCode=-113"
+// (-113 = INSTALL_FAILED_NO_MATCHING_ABIS) -- the system-image path is NOT exempt
+// from the ABI check. Without this the app silently never appears.
+//
+// app_import.go:448 -> zip2zip -x 'lib/**/*.so' -X 'lib/riscv64/*.so'; upstream has
+// no lib/riscv64, so all slices are dropped. androidx.graphics.path has a platform
+// fallback at API >= 34 and the guest is API 37, so this is behaviourally safe.
+//
+// Stripping modifies the APK, so it must be re-signed -- which is why the stock
+// F-Droid Privileged Extension can never accept us (its ClientWhitelist hardcodes
+// F-Droid's own release cert hash). See etc/init.js.rc for what we do instead.
+android_app_import {
+    name: "FDroid",
+    apk: "FDroid.apk",
+    product_specific: true,
+    default_dev_cert: true,
+    strip_unused_jni_arch: true,
+    enforce_uses_libs: false,
+}
