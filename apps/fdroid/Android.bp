@@ -23,7 +23,11 @@ package {
 //
 // Stripping modifies the APK, so it must be re-signed -- which is why the stock
 // F-Droid Privileged Extension can never accept us (its ClientWhitelist hardcodes
-// F-Droid's own release cert hash). See etc/init.js.rc for what we do instead.
+// F-Droid's own release cert hash). Silent install is therefore out of reach, and
+// pre-granting the REQUEST_INSTALL_PACKAGES AppOp from an init.rc hook does not work
+// either: init cannot exec /system/bin/cmd (no SELinux domain transition from
+// u:r:init:s0), verified on hardware 2026-08-31. F-Droid ships as a normal app --
+// the user allows unknown-app installs once, then confirms each install.
 android_app_import {
     name: "FDroid",
     apk: "FDroid.apk",

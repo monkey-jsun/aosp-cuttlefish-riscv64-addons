@@ -39,7 +39,6 @@ explicitly because the stock makefile guards it on the product name.
 | `aosp_cf_js.mk` | the product: inherits stock, adds `PRODUCT_PACKAGES` |
 | `apps/webview/` | Chromium 151 WebView provider (APK fetched, not in git) |
 | `apps/fdroid/` | F-Droid client (APK fetched, not in git) |
-| `etc/init.js.rc` | pre-grants F-Droid's "install unknown apps" AppOp at boot |
 | `prebuilts/apk-pins.tsv` | size + sha256 + source for every third-party APK |
 | `tools/fetch-apks.sh` | fetch and verify; idempotent, safe before every build |
 
@@ -52,6 +51,13 @@ image; only the APK is missing. We supply it as a separate module — the same a
 BayLibre uses, and there is no package-name collision because the stock module is
 disabled on this arch. Chromium **151** specifically: 141 crashes when
 `ro.vendor.api_level >= 202604`.
+
+**F-Droid installs like any normal app.** The user allows unknown-app installs once
+in Settings, then confirms each install. Silent install would need `INSTALL_PACKAGES`
+(privileged, and the F-Droid Privileged Extension hardcodes F-Droid's own certificate
+hash, which our re-signed build can never match). Pre-granting the AppOp from an
+init.rc hook was tried and does not work either: init cannot exec `/system/bin/cmd`,
+as there is no SELinux domain transition from `u:r:init:s0`.
 
 **F-Droid is stripped and re-signed by the build.** `strip_unused_jni_arch` is
 mandatory, not an optimisation — a preinstalled system app whose native libs do not

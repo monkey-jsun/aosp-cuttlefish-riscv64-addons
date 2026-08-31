@@ -18,8 +18,7 @@ PRODUCT_SOONG_ONLY := $(RELEASE_SOONG_ONLY_CUTTLEFISH)
 
 PRODUCT_PACKAGES += \
     webview_riscv64 \
-    FDroid \
-    init.js.rc
+    FDroid
 
 # No launcher customization: F-Droid declares android.intent.category.APP_MARKET,
 # which the stock default_workspace_4x4.xml already places at screen 0, x=3, y=-1
