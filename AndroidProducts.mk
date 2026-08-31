@@ -6,7 +6,7 @@
 # so this repo works at any checkout path. No registration in AOSP is required.
 
 PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/aosp_cf_js.mk
+    aosp_cf_riscv64_phone_js:$(LOCAL_DIR)/aosp_cf_js.mk
 
 COMMON_LUNCH_CHOICES := \
     aosp_cf_riscv64_phone_js-trunk_staging-userdebug
