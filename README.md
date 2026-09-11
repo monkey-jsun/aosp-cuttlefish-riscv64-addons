@@ -1,81 +1,95 @@
 # aosp-cuttlefish-riscv64-addons
 
-Add-on layer for [aosp-cuttlefish-riscv64](https://github.com/monkey-jsun/aosp-cuttlefish-riscv64):
-preinstalled apps for the AOSP riscv64 Cuttlefish guest on the SpaceMiT K3.
+The AOSP guest image for [aosp-cuttlefish-riscv64](https://github.com/monkey-jsun/aosp-cuttlefish-riscv64):
+an Android riscv64 phone image that runs as a Cuttlefish guest on a riscv64 host such as the SpaceMiT K3.
 
-**No AOSP repo is patched.** This repo is injected into the manifest, declares its own
-product inheriting the stock `aosp_cf_riscv64_phone`, and adds packages to it. Adding
-another app later is a commit here and nothing else.
+This repo is the image's home:
+- definition of product `aosp_cf_riscv64_phone_js`, inheriting the stock `aosp_cf_riscv64_phone`
+- the manifest that pins the AOSP tree it is built from
+- pre-installed add-on apps for convenience
+  - **A WebView provider** — AOSP ships none for riscv64. BayLibre's build.
+  - **F-Droid**, app store of open-source apps
 
-## How it attaches
+## Build from source
 
-`AndroidProducts.mk` is discovered by a tree-wide scan
-(`build/make/core/product_config.mk:151` reads the list Soong's finder produces), so
-no registration in AOSP is needed. Add to the manifest:
+### Prerequisites
 
-```xml
-<remote name="github" fetch="https://github.com/"/>
-<project name="monkey-jsun/aosp-cuttlefish-riscv64-addons" path="device/monkey-jsun/cuttlefish_riscv64"
-         remote="github" revision="<pinned sha>"/>
-```
+- Linux **x86_64** build host — AOSP does not support riscv64 as a build host.
+- ~150 GB to sync, ~320 GB once built. A clean first build is ~2–4 h; incremental
+  rebuilds are minutes.
+- The [`repo`](https://gerrit.googlesource.com/git-repo/) tool.
 
-Then build:
+### Get the source
 
 ```sh
-tools/fetch-apks.sh            # pull + verify the pinned APKs
-source build/envsetup.sh
-lunch aosp_cf_riscv64_phone_js-trunk_staging-userdebug
-BUILD_NUMBER=v1.2 m dist
+mkdir android17-release && cd android17-release
+repo init --partial-clone --no-use-superproject \
+    -u https://github.com/monkey-jsun/aosp-cuttlefish-riscv64-addons \
+    -b main \
+    -m manifests/aosp-cf-js-baseline.xml
+repo sync -j8 -c --no-tags --optimized-fetch --retry-fetches=3
 ```
 
-`TARGET_DEVICE` stays `vsoc_riscv64`, so the device tree, BoardConfig and
-`PRODUCT_IGNORE_ALL_ANDROIDMK` are inherited unchanged. `PRODUCT_SOONG_ONLY` is set
-explicitly because the stock makefile guards it on the product name.
+`-b main` gives the current baseline. To reproduce a released image, use its tag instead:
+`-b v1.3.2`.
+
+### Fetch the pinned APKs
+
+Third-party APKs are not stored in git. They are downloaded and sha256-verified against
+[`prebuilts/apk-pins.tsv`](prebuilts/apk-pins.tsv). Idempotent, so it is safe to re-run
+before any build.
+
+```sh
+device/monkey-jsun/cuttlefish_riscv64/tools/fetch-apks.sh
+```
+
+### Build
+
+```sh
+source build/envsetup.sh
+lunch aosp_cf_riscv64_phone_js-trunk_staging-userdebug
+BUILD_NUMBER=v1.3.2 m dist
+```
+
+Output: `out/dist/aosp_cf_riscv64_phone_js-img-v1.3.2.zip` (~900 MB).
+
+### Cutting a release (maintainers)
+
+The manifest pins this repo by SHA, so the commit that records the manifest cannot be the
+one it pins. A cut is therefore two commits:
+
+1. Commit the product changes. Build from that tree and verify it.
+2. Snapshot what was built and commit the record:
+   ```sh
+   repo manifest -r -o device/monkey-jsun/cuttlefish_riscv64/manifests/aosp-cf-js-baseline.xml
+   ```
+3. Tag that second commit `vX.Y.Z` and attach the zip to its GitHub release.
+
+Reproducing `-b vX.Y.Z` reads the manifest from the tagged commit and checks this repo out
+one commit earlier — at what was actually built.
+
+## Run it
+
+Refer to
+[umbrella README](https://github.com/monkey-jsun/aosp-cuttlefish-riscv64#readme)
 
 ## Contents
 
+This repo is attached at `device/monkey-jsun/cuttlefish_riscv64` in the AOSP source tree.
+
 | path | what |
 |---|---|
+| `manifests/aosp-cf-js-baseline.xml` | the pinned AOSP tree; versioned by this repo's tags |
 | `aosp_cf_js.mk` | the product: inherits stock, adds `PRODUCT_PACKAGES` |
 | `apps/webview/` | Chromium 151 WebView provider (APK fetched, not in git) |
 | `apps/fdroid/` | F-Droid client (APK fetched, not in git) |
 | `prebuilts/apk-pins.tsv` | size + sha256 + source for every third-party APK |
 | `tools/fetch-apks.sh` | fetch and verify; idempotent, safe before every build |
 
-## Notes worth knowing
-
-**WebView.** AOSP ships no riscv64 WebView: `external/chromium-webview/Android.bp`
-has no `riscv64` arm, so Soong disables the stock `webview` module silently and the
-guest reports "Current WebView package is null". Everything else is already in the
-image; only the APK is missing. We supply it as a separate module — the same approach
-BayLibre uses, and there is no package-name collision because the stock module is
-disabled on this arch. Chromium **151** specifically: 141 crashes when
-`ro.vendor.api_level >= 202604`.
-
-**F-Droid installs like any normal app.** The user allows unknown-app installs once
-in Settings, then confirms each install. Silent install would need `INSTALL_PACKAGES`
-(privileged, and the F-Droid Privileged Extension hardcodes F-Droid's own certificate
-hash, which our re-signed build can never match). Pre-granting the AppOp from an
-init.rc hook was tried and does not work either: init cannot exec `/system/bin/cmd`,
-as there is no SELinux domain transition from `u:r:init:s0`.
-
-**F-Droid is stripped and re-signed by the build.** `strip_unused_jni_arch` is
-mandatory, not an optimisation — a preinstalled system app whose native libs do not
-match the device ABI is rejected at boot scan with `errorCode=-113`
-(`INSTALL_FAILED_NO_MATCHING_ABIS`); the system-image path is not exempt. Because
-that re-signs the APK, F-Droid's self-update from its own repo will fail on signature
-mismatch, and the F-Droid Privileged Extension can never accept us (it hardcodes
-F-Droid's release certificate hash). Users confirm each install; they are not asked
-to grant permission first.
-
-**No launcher customization.** F-Droid declares `android.intent.category.APP_MARKET`
-and the stock `default_workspace_4x4.xml` already places that category at screen 0,
-x=3 — so a preinstalled F-Droid lands on the home screen with nothing added here.
-
 ## Licences
 
-This repo contains **no third-party binaries**. Both APKs are fetched at build time
-from their upstream sources — a URL and a sha256, recorded in
-`prebuilts/apk-pins.tsv` — so nothing here redistributes them. WebView comes from
-BayLibre's `android_device_spacemit_common` (Chromium: BSD with LGPL components);
-F-Droid from f-droid.org (GPL-3.0). Build files in this repo are Apache-2.0.
+Third-party apps are fetched at build time from their upstream sources — a URL and a sha256, recorded in `prebuilts/apk-pins.tsv`.
+
+- WebView from BayLibre's `android_device_spacemit_common` (Chromium: BSD with LGPL components)
+- F-Droid from f-droid.org (GPL-3.0)
+- Build files in this repo are Apache-2.0
