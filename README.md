@@ -63,7 +63,10 @@ one it pins. A cut is therefore two commits:
    ```sh
    repo manifest -r -o device/monkey-jsun/cuttlefish_riscv64/manifests/aosp-cf-js-baseline.xml
    ```
-3. Tag that second commit `vX.Y.Z` and attach the zip to its GitHub release.
+3. Tag that second commit `vX.Y.Z` and release the zip on it:
+   ```sh
+   gh release create vX.Y.Z --title vX.Y.Z --notes "<notes>" out/dist/aosp_cf_riscv64_phone_js-img-vX.Y.Z.zip
+   ```
 
 Reproducing `-b vX.Y.Z` reads the manifest from the tagged commit and checks this repo out
 one commit earlier — at what was actually built.
