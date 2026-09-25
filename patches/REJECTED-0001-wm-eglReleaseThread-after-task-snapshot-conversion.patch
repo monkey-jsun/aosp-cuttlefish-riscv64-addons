@@ -1,0 +1,46 @@
+Project: frameworks/base
+REJECTED -- DO NOT APPLY. Validated on cuttlefish riscv64: this patch MAKES THE LEAK WORSE.
+eglReleaseThread() drops the thread's HostConnection, but the host never reclaims it because
+EGL ownership is keyed by the virtio process-pipe counter while cleanup is keyed by the ctx id
+(virtio_gpu_pipe.cpp -> HostConnection.cpp -> render_control.cpp vs virtio_gpu_context.cpp).
+So each release-and-recreate strands another set. The acquisition site identified below is
+still correct; the release mechanism is not. The fix belongs in the host (gfxstream) keying,
+plus the single-GL-thread change in 0002. Kept for the record.
+diff --git a/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java b/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java
+index d9d5ba45fe46..f72655a024b0 100644
+--- a/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java
++++ b/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java
+@@ -25,6 +25,7 @@ import android.graphics.PixelFormat;
+ import android.hardware.HardwareBuffer;
+ import android.media.Image;
+ import android.media.ImageReader;
++import android.opengl.EGL14;
+ import android.util.Slog;
+ import android.window.TaskSnapshot;
+ 
+@@ -86,9 +87,22 @@ public class TaskSnapshotConvertUtil {
+         final int width = snapshot.getHardwareBufferWidth();
+         final int height = snapshot.getHardwareBufferHeight();
+         final int pixelFormat = snapshot.getHardwareBufferFormat();
+-        return mustPersistByHardwareRender(snapshot)
+-                ? copyToSwBitmapReadBack(snapshot)
+-                : copyToSwBitmapDirect(width, height, pixelFormat, snapshot);
++        try {
++            return mustPersistByHardwareRender(snapshot)
++                    ? copyToSwBitmapReadBack(snapshot)
++                    : copyToSwBitmapDirect(width, height, pixelFormat, snapshot);
++        } finally {
++            // Snapshot conversion runs on pooled binder threads (WindowManager is
++            // binder-served, via TaskSnapshotController#createLowResSnapshot). Touching EGL
++            // here makes a virtualized GPU guest driver create per-thread EGL state -- under
++            // gfxstream, a thread_local HostConnection owning a render-node fd and host GL
++            // contexts -- which is freed only when the thread exits or eglReleaseThread() is
++            // called. Binder threads never exit, so without this every pooled thread that
++            // ever converts a snapshot strands one set for the life of system_server.
++            // The conversion is one-shot and keeps no EGL state between calls, so releasing
++            // here is safe on any thread this runs on.
++            EGL14.eglReleaseThread();
++        }
+     }
+ 
+     private static Bitmap copyToSwBitmapReadBack(TaskSnapshot snapshot) {

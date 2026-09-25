@@ -1,0 +1,104 @@
+Project: frameworks/base
+Subject: [PATCH] wm: run task-snapshot GL on a single dedicated thread
+
+Task snapshot conversion touches EGL (ImageReader / HardwareBuffer readback) and runs on
+pooled binder threads, because WindowManager is binder-served
+(SnapshotController -> TaskSnapshotController#createLowResSnapshot).
+
+On a virtualized GPU the guest driver keeps per-thread EGL state that is released only at
+thread exit. Under gfxstream that is a thread_local HostConnection owning a render-node fd
+and host GL contexts. Binder threads never exit, so every pooled thread that ever converts
+a snapshot strands one context for the life of system_server: one fresh binder thread
+acquires a context per app launch, growing without bound until the host OOM-kills the VM.
+
+copySWBitmap() is the single chokepoint for all snapshot GL, so funnelling it through one
+long-lived thread bounds the cost to a single context for the process lifetime. The call
+stays synchronous, so no caller changes; the work issues no binder calls, so blocking the
+caller on it cannot deadlock.
+
+Not architecture-specific: any gfxstream guest is affected. It goes unnoticed on hosts where
+the per-context cost is negligible against available RAM.
+
+diff --git a/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java b/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java
+index d9d5ba45fe46..10a12f15d2b7 100644
+--- a/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java
++++ b/services/core/java/com/android/server/wm/TaskSnapshotConvertUtil.java
+@@ -28,6 +28,10 @@ import android.media.ImageReader;
+ import android.util.Slog;
+ import android.window.TaskSnapshot;
+ 
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++
+ /**
+  * Utility class providing methods to convert snapshots between Bitmap formats and/or scale them.
+  */
+@@ -37,6 +41,27 @@ public class TaskSnapshotConvertUtil {
+             ? "TaskSnapshotResolutionConvert" : TAG_WM;
+ 
+     static TaskSnapshot convertSnapshotToLowRes(TaskSnapshot snapshot, float scaleFactor) {
++        // Hop to the dedicated GL thread. This must wrap the WHOLE conversion, not just
++        // copySWBitmap(): convertLowResSnapshot() below does a Bitmap.Config.HARDWARE copy,
++        // which is also a GPU upload and would otherwise stay on the caller's binder thread.
++        // Not nested with any other submit() to this single-thread executor -- copySWBitmap()
++        // runs inline from here, and its only other caller (SnapshotPersistQueue) is already
++        // on the long-lived persister thread.
++        try {
++            return glThread().submit(() -> convertSnapshotToLowResOnGlThread(
++                    snapshot, scaleFactor)).get();
++        } catch (InterruptedException e) {
++            Thread.currentThread().interrupt();
++            Slog.e(TAG, "Interrupted converting task snapshot", e);
++            return null;
++        } catch (ExecutionException e) {
++            Slog.e(TAG, "Failed converting task snapshot", e.getCause());
++            return null;
++        }
++    }
++
++    private static TaskSnapshot convertSnapshotToLowResOnGlThread(TaskSnapshot snapshot,
++            float scaleFactor) {
+         final Bitmap swBitmap = copySWBitmap(snapshot);
+         if (swBitmap == null) {
+             return null;
+@@ -82,6 +107,39 @@ public class TaskSnapshotConvertUtil {
+         return lowResSnapshot;
+     }
+ 
++    /**
++     * Single thread on which all snapshot GL work runs.
++     *
++     * <p>Snapshot conversion touches EGL (via ImageReader / HardwareBuffer readback). On a
++     * virtualized GPU the guest driver creates per-thread EGL state -- under gfxstream a
++     * thread_local HostConnection owning a render-node fd and host GL contexts -- that is
++     * released only when the thread exits. Callers here are pooled binder threads
++     * (WindowManager is binder-served), which never exit, so doing the work inline leaks one
++     * such context per conversion, growing without bound until the host runs out of memory.
++     *
++     * <p>Funnelling every conversion through one long-lived thread bounds that to a single
++     * context for the lifetime of the process. The hop wraps the entire conversion -- both the
++     * ImageReader readback and the Bitmap.Config.HARDWARE upload -- because both touch the GPU.
++     * The work is CPU/GPU-only and issues no binder calls, so blocking the caller cannot
++     * deadlock, and it never re-enters this executor.
++     */
++    private static final Object sGlThreadLock = new Object();
++    private static ExecutorService sGlThread;
++
++    private static ExecutorService glThread() {
++        synchronized (sGlThreadLock) {
++            if (sGlThread == null) {
++                sGlThread = Executors.newSingleThreadExecutor(
++                        r -> {
++                            final Thread t = new Thread(r, "TaskSnapshotGl");
++                            t.setDaemon(true);
++                            return t;
++                        });
++            }
++            return sGlThread;
++        }
++    }
++
+     static Bitmap copySWBitmap(TaskSnapshot snapshot) {
+         final int width = snapshot.getHardwareBufferWidth();
+         final int height = snapshot.getHardwareBufferHeight();
