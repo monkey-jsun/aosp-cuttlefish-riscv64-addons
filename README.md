@@ -6,6 +6,7 @@ an Android riscv64 phone image that runs as a Cuttlefish guest on a riscv64 host
 This repo is the image's home:
 - definition of product `aosp_cf_riscv64_phone_js`, inheriting the stock `aosp_cf_riscv64_phone`
 - the manifest that pins the AOSP tree it is built from
+- patches applied to AOSP for this image
 - pre-installed add-on apps for convenience
   - **A WebView provider** — AOSP ships none for riscv64. BayLibre's build.
   - **F-Droid**, app store of open-source apps
@@ -43,6 +44,14 @@ before any build.
 device/monkey-jsun/cuttlefish_riscv64/tools/fetch-apks.sh
 ```
 
+### Apply the AOSP patches
+
+Fixes carried against stock AOSP. Idempotent, so it is safe to re-run before any build.
+
+```sh
+device/monkey-jsun/cuttlefish_riscv64/patches/apply.sh
+```
+
 ### Build
 
 ```sh
@@ -69,7 +78,8 @@ one it pins. A cut is therefore two commits:
    ```
 
 Reproducing `-b vX.Y.Z` reads the manifest from the tagged commit and checks this repo out
-one commit earlier — at what was actually built.
+one commit earlier — at what was actually built. The patches are pinned the same way, since
+they live in this repo.
 
 ## Run it
 
@@ -86,6 +96,7 @@ This repo is attached at `device/monkey-jsun/cuttlefish_riscv64` in the AOSP sou
 | `aosp_cf_js.mk` | the product: inherits stock, adds `PRODUCT_PACKAGES` |
 | `apps/webview/` | Chromium 151 WebView provider (APK fetched, not in git) |
 | `apps/fdroid/` | F-Droid client (APK fetched, not in git) |
+| `patches/` | AOSP patches + `apply.sh`; `REJECTED-*` are records, never applied |
 | `prebuilts/apk-pins.tsv` | size + sha256 + source for every third-party APK |
 | `tools/fetch-apks.sh` | fetch and verify; idempotent, safe before every build |
 
